@@ -1,0 +1,31 @@
+{
+  "name": "summarize_local",
+  "description": "Summarize incoming text using a local/cheap open-weight model node. Last-resort variant: lowest cost, used only if both cloud providers are failing.",
+  "version": 1,
+  "project_id": "pipelineguard-demo",
+  "source": "webhook",
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "components": [
+    {
+      "id": "webhook_1",
+      "provider": "webhook",
+      "config": { "hideForm": true, "mode": "Source", "parameters": {}, "type": "webhook" }
+    },
+    {
+      "id": "llm_local_1",
+      "provider": "ollama",
+      "config": {
+        "model": "llama3.1:8b",
+        "systemPrompt": "You are a concise assistant. Summarize the input in 2-3 sentences.",
+        "baseUrl": "http://localhost:11434"
+      },
+      "input": [{ "lane": "text", "from": "webhook_1" }]
+    },
+    {
+      "id": "response_text_1",
+      "provider": "response_text",
+      "config": { "laneName": "text" },
+      "input": [{ "lane": "text", "from": "llm_local_1" }]
+    }
+  ]
+}

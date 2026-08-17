@@ -1,0 +1,31 @@
+{
+  "name": "summarize_openai",
+  "description": "Summarize incoming text using an OpenAI-backed LLM node. Primary variant.",
+  "version": 1,
+  "project_id": "pipelineguard-demo",
+  "source": "webhook",
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "components": [
+    {
+      "id": "webhook_1",
+      "provider": "webhook",
+      "config": { "hideForm": true, "mode": "Source", "parameters": {}, "type": "webhook" }
+    },
+    {
+      "id": "llm_openai_1",
+      "provider": "openai",
+      "config": {
+        "model": "gpt-4o-mini",
+        "systemPrompt": "You are a concise assistant. Summarize the input in 2-3 sentences.",
+        "apiKey": "${ROCKETRIDE_OPENAI_KEY}"
+      },
+      "input": [{ "lane": "text", "from": "webhook_1" }]
+    },
+    {
+      "id": "response_text_1",
+      "provider": "response_text",
+      "config": { "laneName": "text" },
+      "input": [{ "lane": "text", "from": "llm_openai_1" }]
+    }
+  ]
+}

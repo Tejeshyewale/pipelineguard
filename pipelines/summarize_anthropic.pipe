@@ -1,0 +1,31 @@
+{
+  "name": "summarize_anthropic",
+  "description": "Summarize incoming text using an Anthropic-backed LLM node. Backup variant, used on failover from the OpenAI variant.",
+  "version": 1,
+  "project_id": "pipelineguard-demo",
+  "source": "webhook",
+  "viewport": { "x": 0, "y": 0, "zoom": 1 },
+  "components": [
+    {
+      "id": "webhook_1",
+      "provider": "webhook",
+      "config": { "hideForm": true, "mode": "Source", "parameters": {}, "type": "webhook" }
+    },
+    {
+      "id": "llm_anthropic_1",
+      "provider": "anthropic",
+      "config": {
+        "model": "claude-haiku-4-5-20251001",
+        "systemPrompt": "You are a concise assistant. Summarize the input in 2-3 sentences.",
+        "apiKey": "${ROCKETRIDE_ANTHROPIC_KEY}"
+      },
+      "input": [{ "lane": "text", "from": "webhook_1" }]
+    },
+    {
+      "id": "response_text_1",
+      "provider": "response_text",
+      "config": { "laneName": "text" },
+      "input": [{ "lane": "text", "from": "llm_anthropic_1" }]
+    }
+  ]
+}
