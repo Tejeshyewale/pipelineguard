@@ -158,5 +158,4 @@ actual model:
 - A small web dashboard over `guard.health()` for live visibility.
 
 ## License
-
-MIT
+GNU
