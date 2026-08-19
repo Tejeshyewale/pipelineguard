@@ -39,6 +39,8 @@ It is a thin, honest wrapper — not a rewrite of RocketRide's runtime.
 Every pipeline execution still goes through the real C++ engine; this
 just decides *which* `.pipe` to point the SDK at, and *when to switch*.
 
+![PipelineGuard Demo](assets/demo.gif)
+
 ### Failover & Execution Flow
 
 ```mermaid
