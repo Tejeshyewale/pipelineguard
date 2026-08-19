@@ -158,4 +158,4 @@ actual model:
 - A small web dashboard over `guard.health()` for live visibility.
 
 ## License
-MIT
+   This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
