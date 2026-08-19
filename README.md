@@ -63,6 +63,21 @@ from pipelineguard.variants import load_variants_from_yaml
 variants = load_variants_from_yaml('config.yaml')
 ```
 
+### Structured Logging
+
+PipelineGuard includes built-in structured JSON logging for all major lifecycle events (variant selection, success, failure, failover, and cooldowns). By default, it logs at the `INFO` level.
+
+You can configure the log level using the `LOG_LEVEL` environment variable:
+
+```bash
+export LOG_LEVEL=DEBUG
+```
+
+A sample log entry looks like this:
+```json
+{"timestamp": "2026-08-19T04:28:34.000Z", "level": "WARNING", "message": "pipelineguard: 'openai-gpt' failed after 1.20s -- failing over", "name": "pipelineguard", "variant": "openai-gpt", "event_type": "run_failure", "latency_ms": 1200, "outcome": "failure", "error": "Connection timeout"}
+```
+
 ### Persistence
 
 By default, the `VariantScoreboard` keeps its state in-memory. If your application restarts, reliability scores are reset. To persist the scores across runs, pass a `persistence_file` to `PipelineGuard` (or `VariantScoreboard`):
