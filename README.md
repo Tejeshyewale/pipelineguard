@@ -23,6 +23,7 @@ You give it a small list of `.pipe` files that all solve the same task (e.g. one
 5. Returns a full `RunReport` so you know exactly what happened and what it cost you in retries
 
 It is a thin, honest wrapper — not a rewrite of RocketRide's runtime. Every pipeline execution still goes through the real C++ engine; this just decides *which* `.pipe` to point the SDK at, and *when to switch*.
+
 ![PipelineGuard Demo](assets/demo.gif)
 
 ### Failover & Execution Flow
