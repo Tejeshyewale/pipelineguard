@@ -8,38 +8,21 @@
 
 ## The problem
 
-If you run RocketRide pipelines in production, you're depending on
-external LLM providers. Providers rate-limit you, time out, or go down.
-When that happens, a naive integration just crashes the whole pipeline
-run — even though RocketRide supports 13+ providers that could have
-handled the same request.
+If you run RocketRide pipelines in production, you're depending on external LLM providers. Providers rate-limit you, time out, or go down. When that happens, a naive integration just crashes the whole pipeline run — even though RocketRide supports 13+ providers that could have handled the same request.
 
 ## What PipelineGuard does
 
-PipelineGuard sits directly on top of the official `rocketride` Python
-SDK (`RocketRideClient.use/send/get_task_status/terminate`) and adds one
-thing: **automatic, cost-aware failover between pipeline variants.**
+PipelineGuard sits directly on top of the official `rocketride` Python SDK (`RocketRideClient.use/send/get_task_status/terminate`) and adds one thing: **automatic, cost-aware failover between pipeline variants.**
 
-You give it a small list of `.pipe` files that all solve the same task
-(e.g. one wired to OpenAI, one to Anthropic, one to a cheap local
-model). PipelineGuard:
+You give it a small list of `.pipe` files that all solve the same task (e.g. one wired to OpenAI, one to Anthropic, one to a cheap local model). PipelineGuard:
 
-1. Picks the best-ranked variant based on a running reliability score
-   (not just "try them in order")
+1. Picks the best-ranked variant based on a running reliability score (not just "try them in order")
 2. Runs it through the real SDK
-3. If it fails (any `rocketride` exception, a bad task status, or a
-   timeout), records the failure, **deprioritizes that variant for a
-   cooldown window**, and immediately tries the next-best one
-4. Fires an `on_failover` hook so you can alert on it (Discord, Slack,
-   whatever you want — PipelineGuard doesn't assume)
-5. Returns a full `RunReport` so you know exactly what happened and
-   what it cost you in retries
+3. If it fails (any `rocketride` exception, a bad task status, or a timeout), records the failure, **deprioritizes that variant for a cooldown window**, and immediately tries the next-best one
+4. Fires an `on_failover` hook so you can alert on it (Discord, Slack, whatever you want — PipelineGuard doesn't assume)
+5. Returns a full `RunReport` so you know exactly what happened and what it cost you in retries
 
-It is a thin, honest wrapper — not a rewrite of RocketRide's runtime.
-Every pipeline execution still goes through the real C++ engine; this
-just decides *which* `.pipe` to point the SDK at, and *when to switch*.
-
-![PipelineGuard Demo](assets/demo.gif)
+It is a thin, honest wrapper — not a rewrite of RocketRide's runtime. Every pipeline execution still goes through the real C++ engine; this just decides *which* `.pipe` to point the SDK at, and *when to switch*.
 
 ### Failover & Execution Flow
 
@@ -60,8 +43,6 @@ flowchart TD
 ## Configuration
 
 ### Loading Variants from config.yaml
-
-Instead of hardcoding variants in Python, you can define them in a YAML file:
 
 ```yaml
 variants:
@@ -85,20 +66,18 @@ variants = load_variants_from_yaml('config.yaml')
 
 PipelineGuard includes built-in structured JSON logging for all major lifecycle events (variant selection, success, failure, failover, and cooldowns). By default, it logs at the `INFO` level.
 
-You can configure the log level using the `LOG_LEVEL` environment variable:
-
 ```bash
 export LOG_LEVEL=DEBUG
 ```
 
-A sample log entry looks like this:
+Sample log entry:
 ```json
 {"timestamp": "2026-08-19T04:28:34.000Z", "level": "WARNING", "message": "pipelineguard: 'openai-gpt' failed after 1.20s -- failing over", "name": "pipelineguard", "variant": "openai-gpt", "event_type": "run_failure", "latency_ms": 1200, "outcome": "failure", "error": "Connection timeout"}
 ```
 
 ### Persistence
 
-By default, the `VariantScoreboard` keeps its state in-memory. If your application restarts, reliability scores are reset. To persist the scores across runs, pass a `persistence_file` to `PipelineGuard` (or `VariantScoreboard`):
+By default, `VariantScoreboard` keeps its state in-memory. To persist reliability scores across restarts, pass a `persistence_file`:
 
 ```python
 guard = PipelineGuard(
@@ -110,12 +89,10 @@ guard = PipelineGuard(
 
 ### Hooks
 
-PipelineGuard provides several hooks to track the lifecycle of your pipeline runs, which is particularly useful for observability and alerting:
-
-- `on_success(variant_name, result)`: Fired when a variant succeeds.
-- `on_failover(variant_name, error)`: Fired when a variant fails and PipelineGuard fails over to the next one.
-- `on_cooldown_start(variant_name)`: Fired when a variant fails and enters cooldown.
-- `on_cooldown_end(variant_name)`: Fired when a variant exits its cooldown period.
+- `on_success(variant_name, result)` — fired when a variant succeeds
+- `on_failover(variant_name, error)` — fired when a variant fails and PipelineGuard fails over
+- `on_cooldown_start(variant_name)` — fired when a variant enters cooldown
+- `on_cooldown_end(variant_name)` — fired when a variant exits cooldown
 
 ```python
 @guard.on_failover
@@ -137,7 +114,8 @@ pipelineguard/
 │   └── exceptions.py  # PipelineGuardError, AllVariantsFailedError
 ├── pipelines/          # Example .pipe files (openai / anthropic / local)
 ├── examples/
-│   └── run_demo.py    # Real end-to-end usage against a live RocketRide server
+│   ├── run_demo.py         # Real end-to-end usage against a live RocketRide server
+│   └── demo_failover.py    # Self-contained terminal demo (no live server needed)
 └── tests/
     ├── fakes.py        # FakeClient — mirrors RocketRideClient's shape for tests
     └── test_guard.py   # 7 unit tests, no live server required
@@ -145,24 +123,15 @@ pipelineguard/
 
 ### How variant selection works
 
-Each variant gets a score:
-
 ```
 score = (success_rate * quality) / relative_cost
 ```
 
-- `success_rate` starts at an optimistic 1.0 for untested variants (so a
-  new backup gets a fair first try), then reflects real outcomes.
-- A variant that just failed goes into a 30-second cooldown where its
-  score is cut to 25% — enough to make PipelineGuard prefer a healthy
-  alternative right now, without permanently blacklisting a provider
-  that had one bad request.
-- Cheaper variants are favored at equal reliability, and higher-quality
-  variants are favored at equal cost — directly mirroring RocketRide's
-  own "reduce GPU/provider cost" positioning.
+- `success_rate` starts at an optimistic 1.0 for untested variants, then reflects real outcomes.
+- A variant that just failed goes into a 30-second cooldown where its score is cut to 25%.
+- Cheaper variants are favored at equal reliability; higher-quality variants at equal cost.
 
-This is a deliberately simple, readable heuristic — not a black box.
-`guard.health()` returns the full scoreboard as a plain dict at any time.
+This is a deliberately simple, readable heuristic — not a black box. `guard.health()` returns the full scoreboard as a plain dict at any time.
 
 ## Installation
 
@@ -175,54 +144,29 @@ pip install -r requirements.txt
 ## Running the example (requires a live RocketRide server)
 
 ```bash
-export ROCKETRIDE_URI="ws://localhost:5565"   # or your Docker/Cloud endpoint
+export ROCKETRIDE_URI="ws://localhost:5565"
 export ROCKETRIDE_APIKEY="your-key"
 python examples/run_demo.py
 ```
 
-Expected output on a clean run:
-
-```
---- Run report ---
-success: True
-variant used: openai
-failovers before success: 0
-  - openai: OK in 1.84s
-
---- Scoreboard ---
-  openai: {'attempts': 1, 'success_rate': 1.0, ...}
-  anthropic: {'attempts': 0, 'success_rate': 1.0, ...}
-  local: {'attempts': 0, 'success_rate': 1.0, ...}
-```
-
-If you simulate a failure (e.g. an invalid API key in
-`summarize_openai.pipe`), you'll see PipelineGuard automatically fail
-over to `anthropic` or `local` without the script crashing.
-
-## Run with Docker (No API keys needed!)
-
-You can run a full failover demo completely locally using Docker Compose. This spins up the application container alongside a lightweight mock RocketRide server:
-
-```bash
-docker-compose up --build
-```
-
-You'll see the application attempt to process a task, fail over when the mock server simulates a failure, and seamlessly recover using a backup variant.
-
-## Recording a Demo GIF
-
-If you want to record a real-time failover GIF for a presentation or documentation (e.g. using `asciinema` or `terminalizer`), we provide a self-contained, colorful terminal demo script that runs without needing a live server:
+## Try it instantly (no server, no API keys)
 
 ```bash
 pip install colorama
 python examples/demo_failover.py
 ```
 
-## Running the tests
+This runs a self-contained simulation showing variant selection, a deliberate failure, cooldown, and failover to a backup — all in your terminal.
 
-The test suite proves the failover and scoring **logic** is correct
-without needing a live RocketRide server or any API keys — it substitutes
-a `FakeClient` that mirrors `RocketRideClient`'s async interface.
+## Run with Docker
+
+```bash
+docker-compose up --build
+```
+
+Spins up the app alongside a lightweight mock RocketRide server so you can see the full failover flow with zero setup.
+
+## Running the tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -243,26 +187,15 @@ tests/test_guard.py::test_score_prefers_cheaper_variant_at_equal_reliability PAS
 
 ## Why this fits RocketRide specifically
 
-This isn't a generic "retry wrapper" — it's built around RocketRide's
-actual model:
+- Uses the documented `.pipe` format and the real `RocketRideClient` methods (`use`, `send`, `get_task_status`, `terminate`) exactly as specified in the SDK docs — no invented API surface.
+- Leans on RocketRide's own multi-provider design (13+ LLM providers) as the raw material for failover.
+- The cost/quality scoring reflects RocketRide's own stated goal of reducing provider/GPU cost.
 
-- Uses the documented `.pipe` format and the real `RocketRideClient`
-  methods (`use`, `send`, `get_task_status`, `terminate`) exactly as
-  specified in the SDK docs — no invented API surface.
-- Leans on RocketRide's own multi-provider design (13+ LLM providers) as
-  the *raw material* for failover — PipelineGuard doesn't add new
-  providers, it makes the ones RocketRide already supports resilient
-  together.
-- The cost/quality scoring reflects RocketRide's own stated goal of
-  reducing provider/GPU cost — this is that idea applied at the
-  routing layer.
+## Roadmap
 
-## Roadmap (not yet built — kept honest)
-
-- Predictive early-warning (flagging a provider as risky *before* it
-  fails) would need real historical trace data at volume; out of scope
-  for this project's timeframe, noted here rather than overstated.
+- Predictive early-warning (flagging a provider as risky before it fails) — needs real historical trace data at volume, out of scope for now.
 - A small web dashboard over `guard.health()` for live visibility.
 
 ## License
-   This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
