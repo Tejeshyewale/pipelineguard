@@ -11,6 +11,9 @@ priority order -- that's what makes the failover cost-aware instead of
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import Dict, List, Optional
+import json
+import os
+import yaml
 
 
 @dataclass
@@ -28,6 +31,22 @@ class Variant:
     filepath: str
     relative_cost: float = 1.0
     quality: float = 1.0
+
+
+def load_variants_from_yaml(filepath: str) -> List[Variant]:
+    """Load variants from a YAML configuration file."""
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    
+    variants = []
+    for item in data.get('variants', []):
+        variants.append(Variant(
+            name=item['name'],
+            filepath=item['filepath'],
+            relative_cost=item.get('relative_cost', 1.0),
+            quality=item.get('quality', 1.0)
+        ))
+    return variants
 
 
 @dataclass
@@ -70,23 +89,60 @@ class VariantScoreboard:
     # in seconds. Prevents hammering a provider that just errored.
     COOLDOWN_S = 30.0
 
-    def __init__(self, variants: List[Variant]):
+    def __init__(self, variants: List[Variant], persistence_file: Optional[str] = None):
         if not variants:
             raise ValueError("VariantScoreboard needs at least one variant")
         self.variants: Dict[str, Variant] = {v.name: v for v in variants}
         self.stats: Dict[str, VariantStats] = {v.name: VariantStats() for v in variants}
+        self.persistence_file = persistence_file
+        if self.persistence_file:
+            self._load()
+
+    def _save(self) -> None:
+        if not self.persistence_file:
+            return
+        data = {}
+        for name, s in self.stats.items():
+            data[name] = {
+                "successes": s.successes,
+                "failures": s.failures,
+                "total_latency_s": s.total_latency_s,
+                "last_failure_at": s.last_failure_at,
+                "consecutive_failures": s.consecutive_failures,
+            }
+        with open(self.persistence_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+
+    def _load(self) -> None:
+        if not os.path.exists(self.persistence_file):
+            return
+        try:
+            with open(self.persistence_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            for name, s_data in data.items():
+                if name in self.stats:
+                    s = self.stats[name]
+                    s.successes = s_data.get("successes", 0)
+                    s.failures = s_data.get("failures", 0)
+                    s.total_latency_s = s_data.get("total_latency_s", 0.0)
+                    s.last_failure_at = s_data.get("last_failure_at")
+                    s.consecutive_failures = s_data.get("consecutive_failures", 0)
+        except Exception:
+            pass  # Fallback to empty stats on load failure
 
     def record_success(self, name: str, latency_s: float) -> None:
         s = self.stats[name]
         s.successes += 1
         s.total_latency_s += latency_s
         s.consecutive_failures = 0
+        self._save()
 
     def record_failure(self, name: str) -> None:
         s = self.stats[name]
         s.failures += 1
         s.consecutive_failures += 1
         s.last_failure_at = monotonic()
+        self._save()
 
     def _in_cooldown(self, name: str) -> bool:
         s = self.stats[name]

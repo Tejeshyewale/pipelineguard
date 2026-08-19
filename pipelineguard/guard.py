@@ -74,12 +74,17 @@ class PipelineGuard:
         variants: List[Variant],
         max_attempts: Optional[int] = None,
         per_attempt_timeout_s: float = 30.0,
+        persistence_file: Optional[str] = None,
     ):
         self.client_factory = client_factory
-        self.scoreboard = VariantScoreboard(variants)
+        self.scoreboard = VariantScoreboard(variants, persistence_file=persistence_file)
         self.max_attempts = max_attempts or len(variants)
         self.per_attempt_timeout_s = per_attempt_timeout_s
         self._on_failover_hooks = []
+        self._on_success_hooks = []
+        self._on_cooldown_start_hooks = []
+        self._on_cooldown_end_hooks = []
+        self._cooldown_state = {v.name: False for v in variants}
 
     def on_failover(self, callback):
         """Register a callback(variant_name, error) fired on each failover.
@@ -90,9 +95,36 @@ class PipelineGuard:
         self._on_failover_hooks.append(callback)
         return callback
 
+    def on_success(self, callback):
+        """Register a callback(variant_name, result) fired on each success."""
+        self._on_success_hooks.append(callback)
+        return callback
+
+    def on_cooldown_start(self, callback):
+        """Register a callback(variant_name) fired when a variant enters cooldown."""
+        self._on_cooldown_start_hooks.append(callback)
+        return callback
+
+    def on_cooldown_end(self, callback):
+        """Register a callback(variant_name) fired when a variant exits cooldown."""
+        self._on_cooldown_end_hooks.append(callback)
+        return callback
+
     async def run(self, payload: Any, objinfo: Optional[dict] = None,
                    mimetype: Optional[str] = None) -> RunReport:
         """Run `payload` through the best-ranked variant, failing over as needed."""
+        
+        for name in self.scoreboard.variants:
+            was_in_cooldown = self._cooldown_state.get(name, False)
+            is_in_cooldown = self.scoreboard._in_cooldown(name)
+            if was_in_cooldown and not is_in_cooldown:
+                self._cooldown_state[name] = False
+                for hook in self._on_cooldown_end_hooks:
+                    try:
+                        hook(name)
+                    except Exception:
+                        logger.exception("pipelineguard: on_cooldown_end hook raised")
+                        
         attempts: List[RunAttempt] = []
         ranked = self.scoreboard.ranked()[: self.max_attempts]
 
@@ -111,6 +143,11 @@ class PipelineGuard:
                     "pipelineguard: '%s' succeeded in %.2fs (attempt %d/%d)",
                     variant_name, latency, len(attempts), len(ranked),
                 )
+                for hook in self._on_success_hooks:
+                    try:
+                        hook(variant_name, result)
+                    except Exception:
+                        logger.exception("pipelineguard: on_success hook raised")
                 return RunReport(
                     ok=True,
                     variant_used=variant_name,
@@ -127,6 +164,15 @@ class PipelineGuard:
                     "pipelineguard: '%s' failed after %.2fs (%s) -- failing over",
                     variant_name, latency, exc,
                 )
+                
+                if self.scoreboard._in_cooldown(variant_name) and not self._cooldown_state.get(variant_name, False):
+                    self._cooldown_state[variant_name] = True
+                    for hook in self._on_cooldown_start_hooks:
+                        try:
+                            hook(variant_name)
+                        except Exception:
+                            logger.exception("pipelineguard: on_cooldown_start hook raised")
+                            
                 for hook in self._on_failover_hooks:
                     try:
                         hook(variant_name, exc)

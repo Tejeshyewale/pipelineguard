@@ -2,7 +2,7 @@
 
 **A cost-aware, self-healing reliability layer for [RocketRide](https://github.com/rocketride-org/rocketride-server) pipelines.**
 
-[![Tests](https://img.shields.io/badge/tests-7%2F7%20passing-brightgreen)](#running-the-tests)
+[![Tests](https://github.com/Tejeshyewale/pipelineguard/actions/workflows/tests.yml/badge.svg)](https://github.com/Tejeshyewale/pipelineguard/actions)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -38,6 +38,61 @@ model). PipelineGuard:
 It is a thin, honest wrapper — not a rewrite of RocketRide's runtime.
 Every pipeline execution still goes through the real C++ engine; this
 just decides *which* `.pipe` to point the SDK at, and *when to switch*.
+
+## Configuration
+
+### Loading Variants from config.yaml
+
+Instead of hardcoding variants in Python, you can define them in a YAML file:
+
+```yaml
+variants:
+  - name: openai-gpt
+    filepath: pipelines/summarize_openai.pipe
+    relative_cost: 1.0
+    quality: 1.0
+  - name: anthropic-claude
+    filepath: pipelines/summarize_anthropic.pipe
+    relative_cost: 1.2
+    quality: 1.1
+```
+
+```python
+from pipelineguard.variants import load_variants_from_yaml
+
+variants = load_variants_from_yaml('config.yaml')
+```
+
+### Persistence
+
+By default, the `VariantScoreboard` keeps its state in-memory. If your application restarts, reliability scores are reset. To persist the scores across runs, pass a `persistence_file` to `PipelineGuard` (or `VariantScoreboard`):
+
+```python
+guard = PipelineGuard(
+    client_factory=my_factory,
+    variants=variants,
+    persistence_file="scoreboard.json"
+)
+```
+
+### Hooks
+
+PipelineGuard provides several hooks to track the lifecycle of your pipeline runs, which is particularly useful for observability and alerting:
+
+- `on_success(variant_name, result)`: Fired when a variant succeeds.
+- `on_failover(variant_name, error)`: Fired when a variant fails and PipelineGuard fails over to the next one.
+- `on_cooldown_start(variant_name)`: Fired when a variant fails and enters cooldown.
+- `on_cooldown_end(variant_name)`: Fired when a variant exits its cooldown period.
+
+```python
+@guard.on_failover
+def alert_slack(name, error):
+    requests.post(SLACK_URL, json={"text": f"Variant {name} failed: {error}"})
+
+@guard.on_cooldown_start
+def log_cooldown(name):
+    print(f"Variant {name} has entered cooldown!")
+```
 
 ## Architecture
 
