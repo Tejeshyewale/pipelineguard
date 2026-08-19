@@ -39,6 +39,22 @@ It is a thin, honest wrapper — not a rewrite of RocketRide's runtime.
 Every pipeline execution still goes through the real C++ engine; this
 just decides *which* `.pipe` to point the SDK at, and *when to switch*.
 
+### Failover & Execution Flow
+
+```mermaid
+flowchart TD
+    A[Request Received] --> B[PipelineGuard Ranks Variants]
+    B --> C[Select Best-Ranked Variant]
+    C --> D[Execute Task via RocketRide SDK]
+    D --> E{Execution Success?}
+    E -- Yes --> F[Record Success & Return RunReport]
+    E -- No --> G[Record Failure & Apply Cooldown]
+    G --> H[Trigger Failover Hooks]
+    H --> I{More Variants Left?}
+    I -- Yes --> C
+    I -- No --> J[Raise AllVariantsFailedError]
+```
+
 ## Configuration
 
 ### Loading Variants from config.yaml
