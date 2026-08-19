@@ -166,6 +166,25 @@ If you simulate a failure (e.g. an invalid API key in
 `summarize_openai.pipe`), you'll see PipelineGuard automatically fail
 over to `anthropic` or `local` without the script crashing.
 
+## Run with Docker (No API keys needed!)
+
+You can run a full failover demo completely locally using Docker Compose. This spins up the application container alongside a lightweight mock RocketRide server:
+
+```bash
+docker-compose up --build
+```
+
+You'll see the application attempt to process a task, fail over when the mock server simulates a failure, and seamlessly recover using a backup variant.
+
+## Recording a Demo GIF
+
+If you want to record a real-time failover GIF for a presentation or documentation (e.g. using `asciinema` or `terminalizer`), we provide a self-contained, colorful terminal demo script that runs without needing a live server:
+
+```bash
+pip install colorama
+python examples/demo_failover.py
+```
+
 ## Running the tests
 
 The test suite proves the failover and scoring **logic** is correct

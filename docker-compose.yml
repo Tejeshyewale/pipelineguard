@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    environment:
+      - ROCKETRIDE_URI=ws://mock-server:5565
+      - ROCKETRIDE_APIKEY=dummy
+    depends_on:
+      - mock-server
+  mock-server:
+    build: .
+    command: ["python", "examples/mock_server.py"]
+    ports:
+      - "5565:5565"

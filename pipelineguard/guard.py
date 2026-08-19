@@ -22,8 +22,7 @@ from typing import Any, Dict, List, Optional
 
 from .exceptions import AllVariantsFailedError
 from .variants import Variant, VariantScoreboard
-
-logger = logging.getLogger("pipelineguard")
+from .logger import logger
 
 
 @dataclass
@@ -119,6 +118,10 @@ class PipelineGuard:
             is_in_cooldown = self.scoreboard._in_cooldown(name)
             if was_in_cooldown and not is_in_cooldown:
                 self._cooldown_state[name] = False
+                logger.info(
+                    "pipelineguard: variant '%s' exited cooldown", name,
+                    extra={"variant": name, "event_type": "cooldown_end"}
+                )
                 for hook in self._on_cooldown_end_hooks:
                     try:
                         hook(name)
@@ -130,6 +133,10 @@ class PipelineGuard:
 
         for variant_name in ranked:
             variant = self.scoreboard.variants[variant_name]
+            logger.info(
+                "pipelineguard: selected variant '%s'", variant_name,
+                extra={"variant": variant_name, "event_type": "variant_selected"}
+            )
             started = monotonic()
             try:
                 result = await asyncio.wait_for(
@@ -142,6 +149,12 @@ class PipelineGuard:
                 logger.info(
                     "pipelineguard: '%s' succeeded in %.2fs (attempt %d/%d)",
                     variant_name, latency, len(attempts), len(ranked),
+                    extra={
+                        "variant": variant_name,
+                        "event_type": "run_success",
+                        "latency_ms": int(latency * 1000),
+                        "outcome": "success"
+                    }
                 )
                 for hook in self._on_success_hooks:
                     try:
@@ -163,10 +176,26 @@ class PipelineGuard:
                 logger.warning(
                     "pipelineguard: '%s' failed after %.2fs (%s) -- failing over",
                     variant_name, latency, exc,
+                    extra={
+                        "variant": variant_name,
+                        "event_type": "run_failure",
+                        "latency_ms": int(latency * 1000),
+                        "outcome": "failure",
+                        "error": str(exc)
+                    }
+                )
+                
+                logger.warning(
+                    "pipelineguard: failover triggered from '%s'", variant_name,
+                    extra={"variant": variant_name, "event_type": "failover_triggered"}
                 )
                 
                 if self.scoreboard._in_cooldown(variant_name) and not self._cooldown_state.get(variant_name, False):
                     self._cooldown_state[variant_name] = True
+                    logger.info(
+                        "pipelineguard: variant '%s' entered cooldown", variant_name,
+                        extra={"variant": variant_name, "event_type": "cooldown_start"}
+                    )
                     for hook in self._on_cooldown_start_hooks:
                         try:
                             hook(variant_name)
